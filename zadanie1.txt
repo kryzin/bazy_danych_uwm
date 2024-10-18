@@ -1,5 +1,4 @@
-## Tworzenie Bazy
-
+-- Tworzenie Bazy
 CREATE TABLE REGIONS (
     region_id NUMBER PRIMARY KEY,
     region_name VARCHAR2(25)
@@ -65,7 +64,8 @@ CREATE TABLE JOB_HISTORY (
     FOREIGN KEY (job_id) REFERENCES JOBS(job_id),
     FOREIGN KEY (department_id) REFERENCES DEPARTMENTS(department_id)
 );
-## Usuwanie Tabeli
+
+-- Usuwanie Tabeli
 SELECT constraint_name
 FROM user_constraints
 WHERE table_name='COUNTRIES'
@@ -75,7 +75,8 @@ ALTER TABLE COUNTRIES
 DROP CONSTRAINT SYS_C00194813;
 
 DROP TABLE REGIONS;
-## Odzyskiwanie Tabeli
+
+-- Odzyskiwanie Tabeli
 FLASHBACK TABLE REGIONS TO BEFORE DROP;
 
 ALTER TABLE COUNTRIES
