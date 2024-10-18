@@ -65,6 +65,12 @@ CREATE TABLE JOB_HISTORY (
     FOREIGN KEY (department_id) REFERENCES DEPARTMENTS(department_id)
 );
 
+-- Edycja Tabeli z ALTER TABLE
+ALTER TABLE EMPLOYEES
+ADD CONSTRAINT fk_manager_employee
+FOREIGN KEY (manager_id)
+REFERENCES EMPLOYEES(employee_id);
+
 -- Usuwanie Tabeli
 SELECT constraint_name
 FROM user_constraints
