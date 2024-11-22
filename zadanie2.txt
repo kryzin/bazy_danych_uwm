@@ -1,0 +1,114 @@
+--- Usuwanie wszystkich tabel
+BEGIN
+  FOR t IN (SELECT table_name FROM user_tables) LOOP
+    EXECUTE IMMEDIATE 'DROP TABLE ' || t.table_name || ' CASCADE CONSTRAINTS';
+  END LOOP;
+END;
+/
+
+--- Kopiowanie tabel od HR
+BEGIN
+  FOR t IN (SELECT table_name FROM all_tables WHERE owner = 'HR') LOOP
+    EXECUTE IMMEDIATE 'CREATE TABLE ' || t.table_name || ' AS SELECT * FROM HR.' || t.table_name;
+  END LOOP;
+END;
+/
+
+--- Usuwanie kluczy głównych/obcych
+BEGIN
+  FOR c IN (SELECT table_name, constraint_name, constraint_type
+            FROM user_constraints
+            WHERE constraint_type IN ('P', 'R'))
+  LOOP
+    EXECUTE IMMEDIATE 'ALTER TABLE ' || c.table_name || ' DROP CONSTRAINT ' || c.constraint_name;
+  END LOOP;
+END;
+/
+
+--- Perspektywa: wynagrodzenie 2000-7000
+CREATE OR REPLACE VIEW wynagrodzenia AS
+SELECT last_name || ' ' || salary AS wynagrodzenie
+FROM EMPLOYEES
+WHERE department_id IN (20, 50) AND salary BETWEEN 2000 AND 7000
+ORDER BY last_name;
+
+--- Perspektywa: zatrudnienia w 2005
+CREATE OR REPLACE VIEW zatrudnienie_2005 AS
+SELECT hire_date, last_name, first_name
+FROM EMPLOYEES
+WHERE manager_id IS NOT NULL AND EXTRACT(YEAR FROM hire_date) = 2005
+ORDER BY first_name;
+
+--- Perspektywa: nazwisko z e, imię z a
+CREATE OR REPLACE VIEW kontakt AS
+SELECT first_name || ' ' || last_name AS fullname, salary, phone_number
+FROM EMPLOYEES
+WHERE SUBSTR(last_name, 3, 1) = 'e' AND first_name LIKE '%' || 'a' || '%'
+ORDER BY 1 DESC, 2 ASC;
+
+--- Perspektywa: miesiące pracy i dodatki
+CREATE OR REPLACE VIEW przepracowane_miesiace AS
+SELECT first_name, last_name,
+       ROUND(MONTHS_BETWEEN(SYSDATE, hire_date)) AS months_worked,
+       CASE
+         WHEN ROUND(MONTHS_BETWEEN(SYSDATE, hire_date)) < 150 THEN salary * 0.10
+         WHEN ROUND(MONTHS_BETWEEN(SYSDATE, hire_date)) BETWEEN 150 AND 200 THEN salary * 0.20
+         ELSE salary * 0.30
+       END AS wysokość_dodatku
+FROM EMPLOYEES
+ORDER BY months_worked;
+
+--- Perspektywa: działy sumy i średnie zarobków <5000
+CREATE OR REPLACE VIEW dzialy_min_5000 AS
+SELECT department_id, ROUND(AVG(salary)) AS srednia_zarobkow, SUM(salary) AS suma_zarobkow
+FROM EMPLOYEES
+GROUP BY department_id
+HAVING MIN(salary) > 5000;
+
+--- Perspektywa: Pracownicy z Toronto
+CREATE OR REPLACE VIEW pracownicy_toronto AS
+SELECT e.last_name, e.department_id, d.department_name, e.job_id
+FROM EMPLOYEES e
+JOIN DEPARTMENTS d ON e.department_id = d.department_id
+JOIN LOCATIONS l ON d.location_id = l.location_id
+WHERE l.city = 'Toronto';
+
+--- Perspektywa: Jennifer i koleżanki
+CREATE OR REPLACE VIEW jennifer_team AS
+SELECT e1.first_name AS jennifer_name, e1.last_name AS jennifer_lastname,
+       e2.first_name AS coworker_name, e2.last_name AS coworker_lastname
+FROM EMPLOYEES e1
+JOIN EMPLOYEES e2 ON e1.department_id = e2.department_id
+WHERE e1.first_name = 'Jennifer' AND e1.employee_id <> e2.employee_id;
+
+--- Perspektywa: Puste departamenty
+CREATE OR REPLACE VIEW puste_departamenty AS
+SELECT department_name
+FROM DEPARTMENTS d
+WHERE NOT EXISTS (
+    SELECT 1 FROM EMPLOYEES e WHERE e.department_id = d.department_id
+);
+
+--- Perspektywa: pracownicy i job grade
+CREATE OR REPLACE VIEW pracownicy_grade AS
+SELECT e.first_name, e.last_name, e.job_id, d.department_name, e.salary, g.grade
+FROM EMPLOYEES e
+JOIN DEPARTMENTS d ON e.department_id = d.department_id
+JOIN JOB_GRADES g ON e.salary BETWEEN g.min_salary AND g.max_salary;
+
+--- Perspektywa: więcej niż średnia zarobków
+CREATE OR REPLACE VIEW powyzej_sredniej AS
+SELECT first_name, last_name, salary
+FROM EMPLOYEES
+WHERE salary > (SELECT AVG(salary) FROM EMPLOYEES)
+ORDER BY salary DESC;
+
+--- Perspektywa: Ludzie z kolegami z u w nazwisku
+CREATE OR REPLACE VIEW wspolpracownicy_u AS
+SELECT e.employee_id, e.first_name, e.last_name
+FROM EMPLOYEES e
+WHERE e.department_id IN (
+    SELECT department_id
+    FROM EMPLOYEES
+    WHERE last_name LIKE '%u%'
+);
