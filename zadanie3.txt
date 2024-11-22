@@ -1,0 +1,186 @@
+--- Blok anonimowy
+DECLARE
+    numer_max NUMBER;
+    new_department_name DEPARTMENTS.department_name%TYPE := 'EDUCATION';
+BEGIN
+    SELECT MAX(department_id) INTO numer_max FROM DEPARTMENTS;
+    numer_max := numer_max + 10;
+    INSERT INTO DEPARTMENTS (department_id, department_name, location_id)
+    VALUES (numer_max, new_department_name, 3000);
+    DBMS_OUTPUT.PUT_LINE('Dodano departament: ' || new_department_name || ' z numerem: ' || numer_max);
+END;
+/
+
+CREATE TABLE nowa (value VARCHAR2(10));
+BEGIN
+    FOR i IN 1..10 LOOP
+        IF i != 4 AND i != 6 THEN
+            INSERT INTO nowa (value) VALUES (TO_CHAR(i));
+        END IF;
+    END LOOP;
+    COMMIT;
+END;
+/
+
+DECLARE
+    country_info COUNTRIES%ROWTYPE;
+BEGIN
+    SELECT * INTO country_info FROM COUNTRIES WHERE country_id = 'CA';
+    DBMS_OUTPUT.PUT_LINE('Kraj: ' || country_info.country_name || ', Region ID: ' || country_info.region_id);
+END;
+/
+
+--- Deklarowanie kursora
+DECLARE
+    CURSOR emp_cursor IS
+        SELECT salary, last_name FROM EMPLOYEES WHERE department_id = 50;
+
+    salary_value EMPLOYEES.salary%TYPE;
+    last_name_value EMPLOYEES.last_name%TYPE;
+BEGIN
+    OPEN emp_cursor;
+    LOOP
+        FETCH emp_cursor INTO salary_value, last_name_value;
+        EXIT WHEN emp_cursor%NOTFOUND;
+
+        IF salary_value > 3100 THEN
+            DBMS_OUTPUT.PUT_LINE(last_name_value || ' - nie dawać podwyżki');
+        ELSE
+            DBMS_OUTPUT.PUT_LINE(last_name_value || ' - dać podwyżkę');
+        END IF;
+    END LOOP;
+    CLOSE emp_cursor;
+END;
+/
+
+--- Kursor zarobki
+DECLARE
+    CURSOR emp_salary_cursor (min_salary NUMBER, max_salary NUMBER, name_part VARCHAR2) IS
+        SELECT salary, first_name, last_name 
+        FROM EMPLOYEES 
+        WHERE salary BETWEEN min_salary AND max_salary
+          AND UPPER(first_name) LIKE '%' || UPPER(name_part) || '%';
+
+BEGIN
+    FOR emp_rec IN emp_salary_cursor(1000, 5000, 'a') LOOP
+        DBMS_OUTPUT.PUT_LINE('Pracownik: ' || emp_rec.first_name || ' ' || emp_rec.last_name || ', Zarobki: ' || emp_rec.salary);
+    END LOOP;
+
+    FOR emp_rec IN emp_salary_cursor(5000, 20000, 'u') LOOP
+        DBMS_OUTPUT.PUT_LINE('Pracownik: ' || emp_rec.first_name || ' ' || emp_rec.last_name || ', Zarobki: ' || emp_rec.salary);
+    END LOOP;
+END;
+/
+
+--- Perspektywa z wątkami
+CREATE OR REPLACE PROCEDURE add_job (
+    p_job_id VARCHAR2,
+    p_job_title VARCHAR2
+) IS
+BEGIN
+    INSERT INTO JOBS (job_id, job_title)
+    VALUES (p_job_id, p_job_title);
+    DBMS_OUTPUT.PUT_LINE('Dodano nowy Job: ' || p_job_id);
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Wystąpił błąd: ' || SQLERRM);
+END;
+/
+
+--- TEST
+BEGIN 
+    ADD_JOB('test1', 'title1');
+END;
+/
+
+BEGIN
+    ADD_JOB('test1', 'title2');
+END;
+/
+
+--- modyfikacja tytułu w job + wyjątek o długości
+CREATE OR REPLACE PROCEDURE update_job_title (
+    p_job_id VARCHAR2,
+    p_new_title VARCHAR2
+) IS
+BEGIN
+    UPDATE JOBS
+    SET job_title = p_new_title
+    WHERE job_id = p_job_id;
+
+    IF SQL%ROWCOUNT = 0 THEN
+        RAISE_APPLICATION_ERROR(-20001, 'No Jobs updated');
+    END IF;
+
+    DBMS_OUTPUT.PUT_LINE('Zaktualizowano Job: ' || p_job_id);
+EXCEPTION
+    WHEN OTHERS THEN
+        IF INSTR(SQLERRM, 'ORA-12899') > 0 THEN
+            DBMS_OUTPUT.PUT_LINE('Błąd: za długi tekst: ');
+        ELSE
+            DBMS_OUTPUT.PUT_LINE('Wystąpił błąd: ' || SQLERRM);
+        END IF;
+END;
+/
+
+--- TEST
+BEGIN
+    UPDATE_JOB_TITLE('dane', RPAD(100,'a',100));
+END;
+/
+
+--- usuwanie jobs
+CREATE OR REPLACE PROCEDURE delete_job (
+    p_job_id VARCHAR2
+) IS
+BEGIN
+    DELETE FROM JOBS
+    WHERE job_id = p_job_id;
+
+    IF SQL%ROWCOUNT = 0 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'No Jobs deleted');
+    END IF;
+
+    DBMS_OUTPUT.PUT_LINE('Usunięto Job: ' || p_job_id);
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Wystąpił błąd: ' || SQLERRM);
+END;
+/
+
+--- test
+BEGIN
+    delete_job('title1');
+END;
+/
+
+--- zarobki i pracownik
+CREATE OR REPLACE PROCEDURE get_employee_salary (
+    p_employee_id NUMBER,
+    p_salary OUT EMPLOYEES.salary%TYPE,
+    p_last_name OUT EMPLOYEES.last_name%TYPE
+) IS
+BEGIN
+    SELECT salary, last_name
+    INTO p_salary, p_last_name
+    FROM EMPLOYEES
+    WHERE employee_id = p_employee_id;
+
+    DBMS_OUTPUT.PUT_LINE('Pracownik: ' || p_last_name || ', Zarobki: ' || p_salary);
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE('Nie znaleziono pracownika o ID: ' || p_employee_id);
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Wystąpił błąd: ' || SQLERRM);
+END;
+/
+
+--- test
+BEGIN
+    get_employee_salary (100);
+END;
+/
+
+--- 
+
+
