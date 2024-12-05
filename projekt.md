@@ -69,7 +69,7 @@ CREATE TABLE ARCHIVE_SHOWTIMES AS SELECT * FROM SHOWTIMES WHERE 1=0;
 # Skrpyty ładujące dane do bazy
 ---
 
-## Dodawanie przez csv, walidacja i archiwizacja
+## Dodawanie przez csv i walidacja
 > Lepiej robić tu archiwizację czy dalej w procedury/funkcje/wyzwalacze zrobić tylko dla usuwanych?
 ```py
 import cx_Oracle
@@ -91,7 +91,7 @@ def validate_showtime_data(row):
 def validate_ticket_data(row):
     return int(row['showtime_id']) > 0 and len(row['customer_name']) > 0 and float(row['price']) > 0
 
-def load_and_archive(file_path, table_name, archive_table, validate_function, insert_query):
+def load_data(file_path, validate_function, insert_query):
     with open(file_path, 'r') as file:
         reader = csv.DictReader(file)
         for row in reader:
@@ -99,20 +99,14 @@ def load_and_archive(file_path, table_name, archive_table, validate_function, in
                 try:
                     # Wstawianie danych do głównej tabeli
                     cursor.execute(insert_query, row)
-
-                    # Archiwizacja danych
-                    archive_query = f"INSERT INTO {archive_table} SELECT * FROM {table_name} WHERE ROWID = :1"
-                    cursor.execute(archive_query, (cursor.lastrowid,))
                 except cx_Oracle.DatabaseError as e:
-                    print(f"Error inserting row {row} into {table_name}: {e}")
+                    print(f"Error inserting row {row}: {e}")
             else:
                 print(f"Invalid data: {row}")
     connection.commit()
 
-load_and_archive(
+load_data(
     'cinemas.csv',
-    'CINEMAS',
-    'ARCHIVE_CINEMAS',
     validate_cinema_data,
     """
     INSERT INTO CINEMAS (name, location, phone, email)
@@ -120,11 +114,8 @@ load_and_archive(
     """
 )
 
-
-load_and_archive(
+load_data(
     'movies.csv',
-    'MOVIES',
-    'ARCHIVE_MOVIES',
     validate_movie_data,
     """
     INSERT INTO MOVIES (title, genre, duration, release_date)
@@ -132,10 +123,8 @@ load_and_archive(
     """
 )
 
-load_and_archive(
+load_data(
     'showtimes.csv',
-    'SHOWTIMES',
-    'ARCHIVE_SHOWTIMES',
     validate_showtime_data,
     """
     INSERT INTO SHOWTIMES (cinema_id, movie_id, start_time, hall_number)
@@ -143,10 +132,8 @@ load_and_archive(
     """
 )
 
-load_and_archive(
+load_data(
     'tickets.csv',
-    'TICKETS',
-    'ARCHIVE_TICKETS',
     validate_ticket_data,
     """
     INSERT INTO TICKETS (showtime_id, customer_name, price, purchase_date)
@@ -160,6 +147,7 @@ connection.close()
 
 **Uruchamiany crontabem:**
 ```bash
+>> python3 /home/your_user/scripts/load_data.py
 >> crontab -e
 >> 0 2 * * * /usr/bin/python3 /home/your_user/scripts/load_data.py >> /home/your_user/scripts/logs/load_data.log 2>&1
 ```
@@ -168,7 +156,7 @@ connection.close()
 # Procedury/funkcje/wyzwalacze
 ---
 
-## CRUD dla CINEMAS
+## CRUD dla CINEMAS (+własny wyjątek)
 ```sql
 CREATE OR REPLACE PROCEDURE add_cinema (
     p_name IN CINEMAS.name%TYPE,
@@ -176,10 +164,25 @@ CREATE OR REPLACE PROCEDURE add_cinema (
     p_phone IN CINEMAS.phone%TYPE,
     p_email IN CINEMAS.email%TYPE
 ) IS
+    cinema_exists EXCEPTION;
+    v_count NUMBER;
 BEGIN
+    SELECT COUNT(*) INTO v_count
+    FROM CINEMAS
+    WHERE name = p_name;
+
+    IF v_count > 0 THEN
+        RAISE cinema_exists;
+    END IF;
+
     INSERT INTO CINEMAS (name, location, phone, email)
     VALUES (p_name, p_location, p_phone, p_email);
     DBMS_OUTPUT.PUT_LINE('Added new cinema: ' || p_name);
+EXCEPTION
+    WHEN cinema_exists THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Cinema with this name already exists.');
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
 END;
 /
 
@@ -219,7 +222,7 @@ END;
 /
 ```
 
-## CRUD dla MOVIES
+## CRUD dla MOVIES (+własny wyjątek)
 ```sql
 CREATE OR REPLACE PROCEDURE add_movie (
     p_title IN MOVIES.title%TYPE,
@@ -227,10 +230,33 @@ CREATE OR REPLACE PROCEDURE add_movie (
     p_duration IN MOVIES.duration%TYPE,
     p_release_date IN MOVIES.release_date%TYPE
 ) IS
+    movie_exists EXCEPTION;
+    invalid_duration EXCEPTION;
+    v_count NUMBER;
 BEGIN
+    SELECT COUNT(*) INTO v_count
+    FROM MOVIES
+    WHERE title = p_title;
+
+    IF v_count > 0 THEN
+        RAISE movie_exists;
+    END IF;
+
+    IF p_duration < 10 OR p_duration > 500 THEN
+        RAISE invalid_duration;
+    END IF;
+
     INSERT INTO MOVIES (title, genre, duration, release_date)
     VALUES (p_title, p_genre, p_duration, p_release_date);
     DBMS_OUTPUT.PUT_LINE('Added new movie: ' || p_title);
+
+EXCEPTION
+    WHEN movie_exists THEN
+        RAISE_APPLICATION_ERROR(-20010, 'Movie with this title already exists.');
+    WHEN invalid_duration THEN
+        RAISE_APPLICATION_ERROR(-20011, 'Invalid duration: Must be between 10 and 500 minutes.');
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
 END;
 /
 
@@ -367,4 +393,444 @@ BEGIN
 END;
 /
 ```
+---
+## Wyzwalacze do archiwizacji usuniętych
+---
+```sql
+CREATE OR REPLACE TRIGGER archive_cinemas_before_delete
+BEFORE DELETE ON CINEMAS
+FOR EACH ROW
+BEGIN
+    INSERT INTO ARCHIVE_CINEMAS (cinema_id, name, location, phone, email)
+    VALUES (:OLD.cinema_id, :OLD.name, :OLD.location, :OLD.phone, :OLD.email);
+END;
+/
 
+CREATE OR REPLACE TRIGGER archive_tickets_before_delete
+BEFORE DELETE ON TICKETS
+FOR EACH ROW
+BEGIN
+    INSERT INTO ARCHIVE_TICKETS (ticket_id, archive_date)
+    VALUES (:OLD.ticket_id, SYSDATE);
+END;
+/
+
+CREATE OR REPLACE TRIGGER archive_movies_before_delete
+BEFORE DELETE ON MOVIES
+FOR EACH ROW
+BEGIN
+    INSERT INTO ARCHIVE_MOVIES (movie_id, title, genre, duration, release_date)
+    VALUES (:OLD.movie_id, :OLD.title, :OLD.genre, :OLD.duration, :OLD.release_date);
+END;
+/
+
+CREATE OR REPLACE TRIGGER archive_showtimes_before_delete
+BEFORE DELETE ON SHOWTIMES
+FOR EACH ROW
+BEGIN
+    INSERT INTO ARCHIVE_SHOWTIMES (showtime_id, cinema_id, movie_id, start_time, hall_number)
+    VALUES (:OLD.showtime_id, :OLD.cinema_id, :OLD.movie_id, :OLD.start_time, :OLD.hall_number);
+END;
+/
+```
+---
+## Logowanie informacji do tabeli
+---
+**Loguje INSERT/UPDATE/DELETE dla tabeli:
+```sql
+CREATE OR REPLACE TRIGGER log_cinemas
+AFTER INSERT OR UPDATE OR DELETE ON CINEMAS
+FOR EACH ROW
+BEGIN
+    INSERT INTO LOGS (operation, details)
+    VALUES (
+        CASE
+            WHEN INSERTING THEN 'INSERT'
+            WHEN UPDATING THEN 'UPDATE'
+            WHEN DELETING THEN 'DELETE'
+        END,
+        CASE
+            WHEN INSERTING THEN 'New Cinema: ' || :NEW.name || ', Location: ' || :NEW.location
+            WHEN UPDATING THEN 'Updated Cinema ID: ' || :OLD.cinema_id || ', From: ' || :OLD.name || ' To: ' || :NEW.name
+            WHEN DELETING THEN 'Deleted Cinema ID: ' || :OLD.cinema_id || ', Name: ' || :OLD.name
+        END
+    );
+END;
+/
+
+CREATE OR REPLACE TRIGGER log_movies
+AFTER INSERT OR UPDATE OR DELETE ON MOVIES
+FOR EACH ROW
+BEGIN
+    INSERT INTO LOGS (operation, details)
+    VALUES (
+        CASE
+            WHEN INSERTING THEN 'INSERT'
+            WHEN UPDATING THEN 'UPDATE'
+            WHEN DELETING THEN 'DELETE'
+        END,
+        CASE
+            WHEN INSERTING THEN 'New Movie: ' || :NEW.title || ', Genre: ' || :NEW.genre
+            WHEN UPDATING THEN 'Updated Movie ID: ' || :OLD.movie_id || ', From: ' || :OLD.title || ' To: ' || :NEW.title
+            WHEN DELETING THEN 'Deleted Movie ID: ' || :OLD.movie_id || ', Title: ' || :OLD.title
+        END
+    );
+END;
+/
+
+CREATE OR REPLACE TRIGGER log_tickets
+AFTER INSERT OR UPDATE OR DELETE ON TICKETS
+FOR EACH ROW
+BEGIN
+    INSERT INTO LOGS (operation, details)
+    VALUES (
+        CASE
+            WHEN INSERTING THEN 'INSERT'
+            WHEN UPDATING THEN 'UPDATE'
+            WHEN DELETING THEN 'DELETE'
+        END,
+        CASE
+            WHEN INSERTING THEN 'New Ticket: Customer Name: ' || :NEW.customer_name || ', Price: ' || :NEW.price
+            WHEN UPDATING THEN 'Updated Ticket ID: ' || :OLD.ticket_id || ', From: ' || :OLD.customer_name || ' To: ' || :NEW.customer_name
+            WHEN DELETING THEN 'Deleted Ticket ID: ' || :OLD.ticket_id || ', Customer: ' || :OLD.customer_name
+        END
+    );
+END;
+/
+
+CREATE OR REPLACE TRIGGER log_showtimes
+AFTER INSERT OR UPDATE OR DELETE ON SHOWTIMES
+FOR EACH ROW
+BEGIN
+    INSERT INTO LOGS (operation, details)
+    VALUES (
+        CASE
+            WHEN INSERTING THEN 'INSERT'
+            WHEN UPDATING THEN 'UPDATE'
+            WHEN DELETING THEN 'DELETE'
+        END,
+        CASE
+            WHEN INSERTING THEN 'New Showtime: Cinema ID: ' || :NEW.cinema_id || ', Movie ID: ' || :NEW.movie_id || ', Start Time: ' || TO_CHAR(:NEW.start_time, 'YYYY-MM-DD HH24:MI')
+            WHEN UPDATING THEN 'Updated Showtime ID: ' || :OLD.showtime_id || ', From: ' || TO_CHAR(:OLD.start_time, 'YYYY-MM-DD HH24:MI') || ' To: ' || TO_CHAR(:NEW.start_time, 'YYYY-MM-DD HH24:MI')
+            WHEN DELETING THEN 'Deleted Showtime ID: ' || :OLD.showtime_id || ', Cinema ID: ' || :OLD.cinema_id || ', Movie ID: ' || :OLD.movie_id
+        END
+    );
+END;
+/
+```
+**Ewentualnie do ręcznego logowania, jeśli dzieje się coś innego**
+```sql
+CREATE OR REPLACE PROCEDURE log_operation (
+    p_operation IN VARCHAR2,
+    p_details IN VARCHAR2
+) IS
+BEGIN
+    INSERT INTO LOGS (operation, details)
+    VALUES (p_operation, p_details);
+END;
+/
+```
+---
+## Obsługa wyjątków
+---
+za drogie bilety
+```sql
+CREATE OR REPLACE TRIGGER validate_ticket_price
+BEFORE INSERT OR UPDATE ON TICKETS
+FOR EACH ROW
+DECLARE
+    high_price EXCEPTION;
+BEGIN
+    IF :NEW.price > 500 THEN
+        RAISE high_price;
+    END IF;
+
+EXCEPTION
+    WHEN high_price THEN
+        RAISE_APPLICATION_ERROR(-20004, 'Ticket price cannot exceed 500.');
+END;
+/
+```
+sala już zajęta
+```sql
+CREATE OR REPLACE TRIGGER check_hall_availability
+BEFORE INSERT OR UPDATE ON SHOWTIMES
+FOR EACH ROW
+DECLARE
+    hall_occupied EXCEPTION;
+    v_count NUMBER;
+BEGIN
+    SELECT COUNT(*)
+    INTO v_count
+    FROM SHOWTIMES
+    WHERE cinema_id = :NEW.cinema_id
+      AND hall_number = :NEW.hall_number
+      AND :NEW.start_time BETWEEN start_time AND start_time + INTERVAL '2' HOUR;
+
+    IF v_count > 0 THEN
+        RAISE hall_occupied;
+    END IF;
+
+EXCEPTION
+    WHEN hall_occupied THEN
+        RAISE_APPLICATION_ERROR(-20021, 'Hall is already booked for this time.');
+END;
+/
+```
+---
+## funkcje wyszukujące, z parametrami
+---
+**wyszukiwarka filmów**
+```sql
+CREATE OR REPLACE PROCEDURE search_movies (
+    p_genre IN MOVIES.genre%TYPE DEFAULT NULL,
+    p_min_duration IN MOVIES.duration%TYPE DEFAULT 0,
+    p_max_duration IN MOVIES.duration%TYPE DEFAULT 500
+) IS
+BEGIN
+    DBMS_OUTPUT.PUT_LINE('Search Results:');
+
+    FOR rec IN (
+        SELECT title, genre, duration
+        FROM MOVIES
+        WHERE (p_genre IS NULL OR genre = p_genre)
+          AND duration BETWEEN p_min_duration AND p_max_duration
+    ) LOOP
+        DBMS_OUTPUT.PUT_LINE('Title: ' || rec.title || ', Genre: ' || rec.genre || ', Duration: ' || rec.duration || ' mins');
+    END LOOP;
+END;
+/
+```
+**wyszukiwarka kin**
+```sql
+CREATE OR REPLACE PROCEDURE search_cinemas (
+    p_name IN CINEMAS.name%TYPE DEFAULT NULL,
+    p_location IN CINEMAS.location%TYPE DEFAULT NULL
+) IS
+BEGIN
+    DBMS_OUTPUT.PUT_LINE('Search Results for Cinemas:');
+
+    FOR rec IN (
+        SELECT cinema_id, name, location, phone, email
+        FROM CINEMAS
+        WHERE (p_name IS NULL OR LOWER(name) LIKE '%' || LOWER(p_name) || '%')
+          AND (p_location IS NULL OR LOWER(location) LIKE '%' || LOWER(p_location) || '%')
+    ) LOOP
+        DBMS_OUTPUT.PUT_LINE('ID: ' || rec.cinema_id || ', Name: ' || rec.name || ', Location: ' || rec.location || ', Phone: ' || rec.phone || ', Email: ' || rec.email);
+    END LOOP;
+END;
+/
+```
+**wyszukiwarka seansów**
+```sql
+CREATE OR REPLACE PROCEDURE search_showtimes (
+    p_cinema_id IN SHOWTIMES.cinema_id%TYPE DEFAULT NULL,
+    p_movie_id IN SHOWTIMES.movie_id%TYPE DEFAULT NULL,
+    p_start_time_min IN SHOWTIMES.start_time%TYPE DEFAULT TO_DATE('1900-01-01', 'YYYY-MM-DD'),
+    p_start_time_max IN SHOWTIMES.start_time%TYPE DEFAULT TO_DATE('2999-12-31', 'YYYY-MM-DD')
+) IS
+BEGIN
+    DBMS_OUTPUT.PUT_LINE('Search Results for Showtimes:');
+
+    FOR rec IN (
+        SELECT showtime_id, cinema_id, movie_id, start_time, hall_number
+        FROM SHOWTIMES
+        WHERE (p_cinema_id IS NULL OR cinema_id = p_cinema_id)
+          AND (p_movie_id IS NULL OR movie_id = p_movie_id)
+          AND start_time BETWEEN p_start_time_min AND p_start_time_max
+    ) LOOP
+        DBMS_OUTPUT.PUT_LINE('ID: ' || rec.showtime_id || ', Cinema ID: ' || rec.cinema_id || ', Movie ID: ' || rec.movie_id || ', Start Time: ' || TO_CHAR(rec.start_time, 'YYYY-MM-DD HH24:MI') || ', Hall: ' || rec.hall_number);
+    END LOOP;
+END;
+/
+```
+**okienkowa z rankingiem filmów (wg czasu trwania)**
+```sql
+CREATE OR REPLACE PROCEDURE show_movie_ranking IS
+BEGIN
+    DBMS_OUTPUT.PUT_LINE('Movie Ranking:');
+
+    FOR rec IN (
+        SELECT
+            title,
+            genre,
+            duration,
+            RANK() OVER (ORDER BY duration DESC) AS rank_duration
+        FROM MOVIES
+    ) LOOP
+        DBMS_OUTPUT.PUT_LINE('Rank: ' || rec.rank_duration || ', Title: ' || rec.title || ', Duration: ' || rec.duration || ' mins');
+    END LOOP;
+END;
+/
+```
+**okienkowa, suma sprzedanych biletów dla każdego seansu**
+```sql
+SELECT
+    title,
+    genre,
+    duration,
+    RANK() OVER (ORDER BY duration DESC) AS rank_duration
+FROM MOVIES;
+```
+**funkcja do ilości dostępnych miejsc**
+```sql
+CREATE OR REPLACE FUNCTION get_available_seats (
+    p_showtime_id IN SHOWTIMES.showtime_id%TYPE
+) RETURN NUMBER IS
+    hall_capacity NUMBER;
+    sold_tickets NUMBER;
+BEGIN
+    SELECT hall_number * 20 
+    INTO hall_capacity
+    FROM SHOWTIMES
+    WHERE showtime_id = p_showtime_id;
+
+    SELECT COUNT(*)
+    INTO sold_tickets
+    FROM TICKETS
+    WHERE showtime_id = p_showtime_id;
+
+    RETURN hall_capacity - sold_tickets;
+END;
+/
+```
+**funkcja: całkowity przychód z seansu**
+```sql
+CREATE OR REPLACE FUNCTION get_available_seats (
+    p_showtime_id IN SHOWTIMES.showtime_id%TYPE
+) RETURN NUMBER IS
+    hall_capacity NUMBER;
+    sold_tickets NUMBER;
+BEGIN
+    SELECT hall_number * 20
+    INTO hall_capacity
+    FROM SHOWTIMES
+    WHERE showtime_id = p_showtime_id;
+
+    SELECT COUNT(*)
+    INTO sold_tickets
+    FROM TICKETS
+    WHERE showtime_id = p_showtime_id;
+
+    RETURN hall_capacity - sold_tickets;
+END;
+/
+```
+**ilość filmów w danym gatunku**
+```sql
+CREATE OR REPLACE FUNCTION get_movie_count (
+    p_genre IN MOVIES.genre%TYPE DEFAULT NULL
+) RETURN NUMBER IS
+    movie_count NUMBER;
+BEGIN
+    -- Obliczenie liczby filmów w podanym gatunku
+    SELECT COUNT(*)
+    INTO movie_count
+    FROM MOVIES
+    WHERE p_genre IS NULL OR genre = p_genre;
+
+    -- Zwrócenie liczby filmów
+    RETURN movie_count;
+END;
+/
+```
+**poprawny numer telefonu w cinemas**
+```sql
+CREATE OR REPLACE FUNCTION is_valid_phone (
+    p_phone IN VARCHAR2
+) RETURN BOOLEAN IS
+BEGIN
+    -- Sprawdzenie, czy numer telefonu zawiera tylko cyfry i ma odpowiednią długość
+    IF LENGTH(p_phone) BETWEEN 9 AND 15 AND REGEXP_LIKE(p_phone, '^[0-9]+$') THEN
+        RETURN TRUE;
+    ELSE
+        RETURN FALSE;
+    END IF;
+END;
+/
+```
+**poprawność daty (movies)**
+```sql
+CREATE OR REPLACE FUNCTION is_valid_phone (
+    p_phone IN VARCHAR2
+) RETURN BOOLEAN IS
+BEGIN
+    -- Sprawdzenie, czy numer telefonu zawiera tylko cyfry i ma odpowiednią długość
+    IF LENGTH(p_phone) BETWEEN 9 AND 15 AND REGEXP_LIKE(p_phone, '^[0-9]+$') THEN
+        RETURN TRUE;
+    ELSE
+        RETURN FALSE;
+    END IF;
+END;
+/
+```
+---
+# Podsumowania
+---
+## Tabela do podsumowań
+```sql
+CREATE TABLE SUMMARY_REPORTS (
+    report_id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    report_type VARCHAR2(50), -- 'monthly', 'quarterly', 'yearly'
+    report_period DATE,
+    total_revenue NUMBER,
+    total_tickets NUMBER,
+    created_at DATE DEFAULT SYSDATE
+);
+```
+**procedura do robienia podsumowań**
+```sql
+CREATE OR REPLACE PROCEDURE generate_summary (
+    p_report_type IN VARCHAR2,
+    p_date IN DATE
+) IS
+    total_revenue NUMBER;
+    total_tickets NUMBER;
+    report_period DATE;
+BEGIN
+    CASE p_report_type
+        WHEN 'monthly' THEN
+            report_period := TRUNC(p_date, 'MM');
+        WHEN 'quarterly' THEN
+            report_period := TRUNC(p_date, 'Q');
+        WHEN 'yearly' THEN
+            report_period := TRUNC(p_date, 'YYYY');
+        ELSE
+            RAISE_APPLICATION_ERROR(-20010, 'Invalid report type. Use ''monthly'', ''quarterly'', or ''yearly''.');
+    END CASE;
+
+    SELECT SUM(price), COUNT(*)
+    INTO total_revenue, total_tickets
+    FROM TICKETS
+    WHERE TRUNC(purchase_date, p_report_type) = report_period;
+
+    INSERT INTO SUMMARY_REPORTS (report_type, report_period, total_revenue, total_tickets)
+    VALUES (p_report_type, report_period, NVL(total_revenue, 0), NVL(total_tickets, 0));
+
+    DBMS_OUTPUT.PUT_LINE('Report generated: ' || p_report_type || ' for period: ' || TO_CHAR(report_period, 'YYYY-MM-DD'));
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE('No data found for the given period and report type.');
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
+END;
+/
+```
+przykład użycia: 
+```sql
+BEGIN
+    generate_summary('monthly', TO_DATE('2024-01-01', 'YYYY-MM-DD'));
+END;
+/
+```
+**nowy miesięczny jak ktoś kupi bilet**
+```sql
+CREATE OR REPLACE TRIGGER trigger_monthly_summary
+AFTER INSERT ON TICKETS
+FOR EACH ROW
+BEGIN
+    generate_summary('monthly', :NEW.purchase_date);
+END;
+/
+```
