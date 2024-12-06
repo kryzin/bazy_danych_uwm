@@ -70,7 +70,7 @@ CREATE TABLE ARCHIVE_SHOWTIMES AS SELECT * FROM SHOWTIMES WHERE 1=0;
 ---
 
 ## Dodawanie przez csv i walidacja
-> Lepiej robić tu archiwizację czy dalej w procedury/funkcje/wyzwalacze zrobić tylko dla usuwanych?
+Pliki .csv umieszczamy w tym samym folderze (albo zmieniamy path w kodzie), w .env trzymam login i hasło. 
 ```py
 import cx_Oracle
 import csv
