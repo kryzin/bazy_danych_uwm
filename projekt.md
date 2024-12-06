@@ -147,9 +147,9 @@ connection.close()
 
 **Uruchamiany crontabem:**
 ```bash
->> python3 /home/your_user/scripts/load_data.py
+>> python3 /scripts/load_data.py
 >> crontab -e
->> 0 2 * * * /usr/bin/python3 /home/your_user/scripts/load_data.py >> /home/your_user/scripts/logs/load_data.log 2>&1
+>> 0 2 * * * /usr/bin/python3 /scripts/load_data.py >> /scripts/logs/load_data.log 2>&1
 ```
 
 ---
