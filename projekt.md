@@ -442,19 +442,25 @@ CREATE OR REPLACE TRIGGER log_cinemas
 AFTER INSERT OR UPDATE OR DELETE ON CINEMAS
 FOR EACH ROW
 BEGIN
-    INSERT INTO LOGS (operation, details)
-    VALUES (
-        CASE
-            WHEN INSERTING THEN 'INSERT'
-            WHEN UPDATING THEN 'UPDATE'
-            WHEN DELETING THEN 'DELETE'
-        END,
-        CASE
-            WHEN INSERTING THEN 'New Cinema: ' || :NEW.name || ', Location: ' || :NEW.location
-            WHEN UPDATING THEN 'Updated Cinema ID: ' || :OLD.cinema_id || ', From: ' || :OLD.name || ' To: ' || :NEW.name
-            WHEN DELETING THEN 'Deleted Cinema ID: ' || :OLD.cinema_id || ', Name: ' || :OLD.name
-        END
-    );
+    IF INSERTING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'INSERT',
+            'New Cinema: ' || :NEW.name || ', Location: ' || :NEW.location
+        );
+    ELSIF UPDATING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'UPDATE',
+            'Updated Cinema ID: ' || :OLD.cinema_id || ', From: ' || :OLD.name || ' To: ' || :NEW.name
+        );
+    ELSIF DELETING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'DELETE',
+            'Deleted Cinema ID: ' || :OLD.cinema_id || ', Name: ' || :OLD.name
+        );
+    END IF;
 END;
 /
 
@@ -462,19 +468,25 @@ CREATE OR REPLACE TRIGGER log_movies
 AFTER INSERT OR UPDATE OR DELETE ON MOVIES
 FOR EACH ROW
 BEGIN
-    INSERT INTO LOGS (operation, details)
-    VALUES (
-        CASE
-            WHEN INSERTING THEN 'INSERT'
-            WHEN UPDATING THEN 'UPDATE'
-            WHEN DELETING THEN 'DELETE'
-        END,
-        CASE
-            WHEN INSERTING THEN 'New Movie: ' || :NEW.title || ', Genre: ' || :NEW.genre
-            WHEN UPDATING THEN 'Updated Movie ID: ' || :OLD.movie_id || ', From: ' || :OLD.title || ' To: ' || :NEW.title
-            WHEN DELETING THEN 'Deleted Movie ID: ' || :OLD.movie_id || ', Title: ' || :OLD.title
-        END
-    );
+    IF INSERTING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'INSERT',
+            'New Movie: ' || :NEW.title || ', Genre: ' || :NEW.genre
+        );
+    ELSIF UPDATING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'UPDATE',
+            'Updated Movie ID: ' || :OLD.movie_id || ', From: ' || :OLD.title || ' To: ' || :NEW.title
+        );
+    ELSIF DELETING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'DELETE',
+            'Deleted Movie ID: ' || :OLD.movie_id || ', Title: ' || :OLD.title
+        );
+    END IF;
 END;
 /
 
@@ -482,19 +494,25 @@ CREATE OR REPLACE TRIGGER log_tickets
 AFTER INSERT OR UPDATE OR DELETE ON TICKETS
 FOR EACH ROW
 BEGIN
-    INSERT INTO LOGS (operation, details)
-    VALUES (
-        CASE
-            WHEN INSERTING THEN 'INSERT'
-            WHEN UPDATING THEN 'UPDATE'
-            WHEN DELETING THEN 'DELETE'
-        END,
-        CASE
-            WHEN INSERTING THEN 'New Ticket: Customer Name: ' || :NEW.customer_name || ', Price: ' || :NEW.price
-            WHEN UPDATING THEN 'Updated Ticket ID: ' || :OLD.ticket_id || ', From: ' || :OLD.customer_name || ' To: ' || :NEW.customer_name
-            WHEN DELETING THEN 'Deleted Ticket ID: ' || :OLD.ticket_id || ', Customer: ' || :OLD.customer_name
-        END
-    );
+    IF INSERTING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'INSERT',
+            'New Ticket: Customer Name: ' || :NEW.customer_name || ', Price: ' || :NEW.price
+        );
+    ELSIF UPDATING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'UPDATE',
+            'Updated Ticket ID: ' || :OLD.ticket_id || ', From: ' || :OLD.customer_name || ' To: ' || :NEW.customer_name
+        );
+    ELSIF DELETING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'DELETE',
+            'Deleted Ticket ID: ' || :OLD.ticket_id || ', Customer: ' || :OLD.customer_name
+        );
+    END IF;
 END;
 /
 
@@ -502,31 +520,25 @@ CREATE OR REPLACE TRIGGER log_showtimes
 AFTER INSERT OR UPDATE OR DELETE ON SHOWTIMES
 FOR EACH ROW
 BEGIN
-    INSERT INTO LOGS (operation, details)
-    VALUES (
-        CASE
-            WHEN INSERTING THEN 'INSERT'
-            WHEN UPDATING THEN 'UPDATE'
-            WHEN DELETING THEN 'DELETE'
-        END,
-        CASE
-            WHEN INSERTING THEN 'New Showtime: Cinema ID: ' || :NEW.cinema_id || ', Movie ID: ' || :NEW.movie_id || ', Start Time: ' || TO_CHAR(:NEW.start_time, 'YYYY-MM-DD HH24:MI')
-            WHEN UPDATING THEN 'Updated Showtime ID: ' || :OLD.showtime_id || ', From: ' || TO_CHAR(:OLD.start_time, 'YYYY-MM-DD HH24:MI') || ' To: ' || TO_CHAR(:NEW.start_time, 'YYYY-MM-DD HH24:MI')
-            WHEN DELETING THEN 'Deleted Showtime ID: ' || :OLD.showtime_id || ', Cinema ID: ' || :OLD.cinema_id || ', Movie ID: ' || :OLD.movie_id
-        END
-    );
-END;
-/
-```
-**Ewentualnie do ręcznego logowania, jeśli dzieje się coś innego**
-```sql
-CREATE OR REPLACE PROCEDURE log_operation (
-    p_operation IN VARCHAR2,
-    p_details IN VARCHAR2
-) IS
-BEGIN
-    INSERT INTO LOGS (operation, details)
-    VALUES (p_operation, p_details);
+    IF INSERTING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'INSERT',
+            'New Showtime: Cinema ID: ' || :NEW.cinema_id || ', Movie ID: ' || :NEW.movie_id || ', Start Time: ' || TO_CHAR(:NEW.start_time, 'YYYY-MM-DD HH24:MI')
+        );
+    ELSIF UPDATING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'UPDATE',
+            'Updated Showtime ID: ' || :OLD.showtime_id || ', From: ' || TO_CHAR(:OLD.start_time, 'YYYY-MM-DD HH24:MI') || ' To: ' || TO_CHAR(:NEW.start_time, 'YYYY-MM-DD HH24:MI')
+        );
+    ELSIF DELETING THEN
+        INSERT INTO LOGS (operation, details)
+        VALUES (
+            'DELETE',
+            'Deleted Showtime ID: ' || :OLD.showtime_id || ', Cinema ID: ' || :OLD.cinema_id || ', Movie ID: ' || :OLD.movie_id
+        );
+    END IF;
 END;
 /
 ```
@@ -663,15 +675,6 @@ BEGIN
 END;
 /
 ```
-**okienkowa, suma sprzedanych biletów dla każdego seansu**
-```sql
-SELECT
-    title,
-    genre,
-    duration,
-    RANK() OVER (ORDER BY duration DESC) AS rank_duration
-FROM MOVIES;
-```
 **funkcja do ilości dostępnych miejsc**
 ```sql
 CREATE OR REPLACE FUNCTION get_available_seats (
@@ -723,33 +726,16 @@ CREATE OR REPLACE FUNCTION get_movie_count (
 ) RETURN NUMBER IS
     movie_count NUMBER;
 BEGIN
-    -- Obliczenie liczby filmów w podanym gatunku
     SELECT COUNT(*)
     INTO movie_count
     FROM MOVIES
     WHERE p_genre IS NULL OR genre = p_genre;
 
-    -- Zwrócenie liczby filmów
     RETURN movie_count;
 END;
 /
 ```
 **poprawny numer telefonu w cinemas**
-```sql
-CREATE OR REPLACE FUNCTION is_valid_phone (
-    p_phone IN VARCHAR2
-) RETURN BOOLEAN IS
-BEGIN
-    -- Sprawdzenie, czy numer telefonu zawiera tylko cyfry i ma odpowiednią długość
-    IF LENGTH(p_phone) BETWEEN 9 AND 15 AND REGEXP_LIKE(p_phone, '^[0-9]+$') THEN
-        RETURN TRUE;
-    ELSE
-        RETURN FALSE;
-    END IF;
-END;
-/
-```
-**poprawność daty (movies)**
 ```sql
 CREATE OR REPLACE FUNCTION is_valid_phone (
     p_phone IN VARCHAR2
