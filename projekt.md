@@ -74,22 +74,32 @@ CREATE TABLE ARCHIVE_SHOWTIMES AS SELECT * FROM SHOWTIMES WHERE 1=0;
 ```py
 import cx_Oracle
 import csv
-import json
+from dotenv import load_dotenv
+import os
 
-connection = cx_Oracle.connect("user/password@localhost/orcl")
+
+load_dotenv()
+user = os.getenv("USER")
+password = os.getenv("PASSWORD")
+connection = cx_Oracle.connect(f'{user}/{password}@213.184.8.44/orcl')
 cursor = connection.cursor()
+
 
 def validate_cinema_data(row):
     return len(row['name']) > 0 and len(row['location']) > 0
 
+
 def validate_movie_data(row):
     return len(row['title']) > 0 and len(row['genre']) > 0 and int(row['duration']) > 0
+
 
 def validate_showtime_data(row):
     return int(row['cinema_id']) > 0 and int(row['movie_id']) > 0 and len(row['start_time']) > 0
 
+
 def validate_ticket_data(row):
     return int(row['showtime_id']) > 0 and len(row['customer_name']) > 0 and float(row['price']) > 0
+
 
 def load_data(file_path, validate_function, insert_query):
     with open(file_path, 'r') as file:
@@ -104,6 +114,7 @@ def load_data(file_path, validate_function, insert_query):
             else:
                 print(f"Invalid data: {row}")
     connection.commit()
+
 
 load_data(
     'cinemas.csv',
