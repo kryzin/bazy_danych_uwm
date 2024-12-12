@@ -72,7 +72,7 @@ CREATE TABLE ARCHIVE_SHOWTIMES AS SELECT * FROM SHOWTIMES WHERE 1=0;
 ## Dodawanie przez csv i walidacja
 Pliki .csv umieszczamy w tym samym folderze (albo zmieniamy path w kodzie), w .env trzymam login i hasło. 
 ```py
-import cx_Oracle
+import oracledb
 import csv
 from dotenv import load_dotenv
 import os
@@ -81,7 +81,7 @@ import os
 load_dotenv()
 user = os.getenv("USER")
 password = os.getenv("PASSWORD")
-connection = cx_Oracle.connect(f'{user}/{password}@213.184.8.44/orcl')
+connection = oracledb.connect(user=user, password=password, dsn="213.184.8.44/orcl")
 cursor = connection.cursor()
 
 
@@ -109,7 +109,7 @@ def load_data(file_path, validate_function, insert_query):
                 try:
                     # Wstawianie danych do głównej tabeli
                     cursor.execute(insert_query, row)
-                except cx_Oracle.DatabaseError as e:
+                except oracledb.DatabaseError as e:
                     print(f"Error inserting row {row}: {e}")
             else:
                 print(f"Invalid data: {row}")
